@@ -2,48 +2,34 @@ import numpy as np
 
 
 # Класс для моделирования движения объекта (квадрат со стороной 1 + 2*obj_radius) по сцене
-class Moving_object:
+class Moving_Object:
     def __init__(
             self,
-            field_size=(64,64),     # размер сцены (высота, ширина в пикселях)
-            obj_radius=1            # радиус объекта (в пикселях)
+            field_size=(64,64),     # размер сцены (ширина, высота в пикселях)
+            obj_radius=2,           # радиус объекта (в пикселях)
+            start_x=None,           # начальная координата по ширине
+            start_y=None,           # начальная координата по высоте
+            direction=(1,1),        # направление движения (dir_x, dir_y)
+            noise=0                 # максимальное отклонение от траектории
     ):
-        # Размеры поля
-        self.height, self.width = field_size  
-        # Половина стороны квадрата
-        self.obj_radius = obj_radius            
-
-        # x, y - текущие координаты объекта; изначально объект в центре поля
-        self.x = self.width // 2
-        self.y = self.height // 2
-
-        # Направление движения (значение смещения в пикселях)
-        # По ширине: если > 0, то вправо, если < 0, то влево
-        self.dir_x = 0
-        # По высоте: если > 0, то вниз, если < 0, то вверх
-        self.dir_y = 0
-
-
-    # Сброс состояния объекта
-    def reset(
-            self,
-            start_pos=None,         # стартовая позиция (кортеж: сначала по x, потом по y)
-            direction=(0,0)         # направление движения (по умолчанию объект стоит на месте)
-    ):
-        # Если новая стартовая позиция не указана явно, то перемещаем объект в центр поля
-        if start_pos:
-            self.x, self.y = start_pos
-        else:
-            self.x, self.y = self.width // 2, self.height // 2
+        self.field_width, self.field_height = field_size  
         self.dir_x, self.dir_y = direction
+        self.obj_radius = obj_radius    
+        self.noise = noise
+
+        if start_x is None:
+            start_x = self.field_width // 2
+        if start_y is None:
+            start_y = self.field_height // 2
+
+        # x, y - текущие координаты центра объекта
+        self.center_x = int(start_x)
+        self.center_y = int(start_y)
 
 
 
     # Один шаг движения объекта
-    def step(
-            self,
-            noise=1         # максимально возможное отклонение от основной траектории
-    ):
+    def step(self):
         """
 
         Основная траектория движения задается через (dir_x, dir_y).
@@ -51,35 +37,29 @@ class Moving_object:
 
         """
         # Определяем смещение
-        noise_dx = np.random.randint(-noise, noise + 1)
-        noise_dy = np.random.randint(-noise, noise + 1)
-
+        noise_dx = np.random.randint(-self.noise, self.noise + 1)
+        noise_dy = np.random.randint(-self.noise, self.noise + 1)
         # Вычисляем новую позицию
-        new_x = self.x + self.dir_x + noise_dx
-        new_y = self.y + self.dir_y + noise_dy
-
+        new_x = self.center_x + self.dir_x + noise_dx
+        new_y = self.center_y + self.dir_y + noise_dy
         # Ограничиваем координаты, чтобы не выйти за границы поля
-        self.x = np.clip(new_x, 0, self.width - 1)
-        self.y = np.clip(new_y, 0, self.height - 1)
+        new_x = np.clip(new_x, self.obj_radius, self.field_width - self.obj_radius)
+        new_y = np.clip(new_y, self.obj_radius, self.field_height - self.obj_radius)
+        # Обновляем координаты центра
+        self.center_x = new_x
+        self.center_y = new_y
 
 
-    # Установка нового направления движения
-    def set_base_direction(self, dx, dy):
-        self.dir_x = dx
-        self.dir_y = dy
+
+    # "Рисует" белый квадрат на кадре frame 
+    # (frame - numpy матрица с нормированными значениями яркости)
+    def fix_obj(self, frame):
+        x_min = int(self.center_x - self.obj_radius)
+        x_max = int(self.center_x + self.obj_radius)
+        y_min = int(self.center_y - self.obj_radius)
+        y_max = int(self.center_y + self.obj_radius)
+        frame[y_min:y_max+1, x_min:x_max+1] = 1.0
 
 
-    # Генерирует текущую сцену - черное поле с белым объектом (квадрат)
-    def show_scene(self):
-        # Инициализируем поле нулями (все пиксели черные)
-        frame = np.zeros((self.height, self.width), dtype=np.float32)
+    
 
-        # Обходим квадратную область вокруг центра (в пределах half_size)
-        for dy in range(-self.obj_radius, self.obj_radius + 1):
-            for dx in range(-self.obj_radius, self.obj_radius + 1):
-                xx = np.clip(self.x + dx, 0, self.width - 1)
-                yy = np.clip(self.y + dy, 0, self.height - 1)
-                # Яркость объекта
-                frame[yy, xx] = 1.0  
-
-        return frame
