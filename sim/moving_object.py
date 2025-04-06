@@ -5,14 +5,14 @@ import numpy as np
 class Moving_Object:
     def __init__(
             self,
-            field_size=(64,64),     # размер сцены (ширина, высота в пикселях)
+            field_size=(64,64),     # размер сцены (высота, ширина в пикселях)
             obj_radius=2,           # радиус объекта (в пикселях)
             start_x=None,           # начальная координата по ширине
             start_y=None,           # начальная координата по высоте
             direction=(1,1),        # направление движения (dir_x, dir_y)
             noise=0                 # максимальное отклонение от траектории
     ):
-        self.field_width, self.field_height = field_size  
+        self.field_height, self.field_width = field_size  
         self.dir_x, self.dir_y = direction
         self.obj_radius = obj_radius    
         self.noise = noise

@@ -3,13 +3,13 @@ import numpy as np
 class Camera:
     def __init__(
             self,
-            field_size=(64,64),     # размер поля (ширина, высота)
-            window_size=(28,28),    # размер окна обзора камеры (ширина, высота)
+            field_size=(64,64),     # размер поля (высота, ширина)
+            window_size=(28,28),    # размер окна обзора камеры (высота, ширина)
             start_x=None,
             start_y=None
     ):
-        self.field_width, self.field_height = field_size
-        self.window_width, self.window_height = window_size
+        self.field_height, self.field_width = field_size
+        self.window_height, self.window_width = window_size
 
         # Координаты верхнего левого угла камеры
         if start_x is None:

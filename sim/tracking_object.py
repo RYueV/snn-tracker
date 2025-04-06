@@ -4,7 +4,7 @@ from .moving_object import Moving_Object
 from .camera import Camera
 
 
-# Симуляция слежения
+# Симуляция отслеживания объекта
 class Tracking_Object:
     def __init__(
         self,
@@ -15,7 +15,7 @@ class Tracking_Object:
         noise=0                 # максимальное отклонение от траектории
     ):
         # Размер поля
-        self.field_width, self.field_height = field_size
+        self.field_height, self.field_width = field_size
 
         # Объект (белый квадрат со стороной 1+2*obj_radius)
         self.object = Moving_Object(
