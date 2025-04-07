@@ -6,11 +6,19 @@ import numpy as np
 
 """
 
+# Рефрактерный период для одинаковых событий
+PIXEL_REF = 7
+# Логарифмический порог изменения яркости для генерации события
+THRESHOLD = 0.2
+EXP_THRESHOLD = np.exp(THRESHOLD)
+EXP_MINUS_THRESHOLD = np.exp(-THRESHOLD)
+
+
+
 
 # Инициализация состояния генератора событий
 def init_event_generator(
-        frame_shape=(28,28),        # размер изображения (обзор камеры)
-        pixel_ref=3.0               # рефрактерный период для пикселя
+        frame_shape=(28,28)         # размер изображения (обзор камеры)
 ):
     return {
         # Для каждого пикселя хранит яркость, при которой было последнее on-событие
@@ -19,8 +27,6 @@ def init_event_generator(
         "last_pixel_value_off": np.ones(frame_shape, dtype=np.float32) * 1.0,
         # Для каждого пикселя и каждой полярности хранит время последнего события
         "t_last_event": np.full((*frame_shape, 2), -np.inf, dtype=np.float32),
-        # Рефрактерный период для пикселя с одной и той же полярностью
-        "pixel_ref": pixel_ref
     }
 
 
@@ -31,8 +37,7 @@ def generate_events(
         old_frame,          # предыдущий кадр (2D np матрица)
         new_frame,          # новый кадр (2D np матрица)
         prev_t,             # время фиксации предыдущего кадра
-        new_t,              # время фиксации нового кадра
-        threshold=0.3       # логарифмический порог изменения яркости для генерации события
+        new_t               # время фиксации нового кадра
 ):
     """
 
@@ -62,9 +67,7 @@ def generate_events(
     last_pixel_value_on = state["last_pixel_value_on"]      # последние яркости при фиксации on-событий
     last_pixel_value_off = state["last_pixel_value_off"]    # последние яркости при фиксации off-событий
     t_last_event = state["t_last_event"]                    # моменты времени фиксации последних событий
-    
-    # Рефрактерный период для пикселя с одной и той же полярностью
-    pixel_ref = state["pixel_ref"]     
+     
     # Малая константа для защиты от log(0)         
     eps = 1e-5  
 
@@ -87,12 +90,12 @@ def generate_events(
                 last_recorded_value = last_pixel_value_on[y, x] + eps
 
                 # Если с того момента яркость изменилась менее чем в e^(threshold) раз
-                if np.log((new_pixel_value + eps) / last_recorded_value) < threshold:
+                if np.log((new_pixel_value + eps) / last_recorded_value) < THRESHOLD:
                     # Выходим из цикла, тк изменение незначительное
                     break
 
                 # Фиксируем яркость, при которой достигли нового on-события
-                new_recorded_value = last_recorded_value * np.exp(threshold)
+                new_recorded_value = last_recorded_value * EXP_THRESHOLD
                 # Используем линейную интерполяцию, чтобы найти момент времени события
                 alpha = (new_recorded_value - old_pixel_value) / delta_pixels
                 t = prev_t + alpha * (new_t - prev_t)
@@ -100,7 +103,7 @@ def generate_events(
                 # Если вышли за временные рамки, или рефрактерный период не вышел, прерываем цикл
                 if not (prev_t <= t <= new_t):
                     break
-                if t - t_last_event[y, x, 1] < pixel_ref:
+                if t - t_last_event[y, x, 1] < PIXEL_REF:
                     break
 
                 # Фиксируем on-событие
@@ -117,12 +120,12 @@ def generate_events(
                 last_recorded_value = last_pixel_value_off[y, x] + eps
 
                 # Если с того момента яркость изменилась менее чем в e^(-threshold) раз
-                if np.log((new_pixel_value + eps) / last_recorded_value) > -threshold:
+                if np.log((new_pixel_value + eps) / last_recorded_value) > -THRESHOLD:
                     # Выходим из цикла, тк изменение незначительное
                     break
 
                 # Фиксируем яркость, при которой достигли нового off-события
-                new_recorded_value = last_recorded_value * np.exp(-threshold)
+                new_recorded_value = last_recorded_value * EXP_MINUS_THRESHOLD
                 # Используем линейную интерполяцию, чтобы найти момент времени события
                 alpha = (new_recorded_value - old_pixel_value) / delta_pixels
                 t = prev_t + alpha * (new_t - prev_t)
@@ -130,7 +133,7 @@ def generate_events(
                 # Если вышли за временные рамки, или рефрактерный период не вышел, прерываем цикл
                 if not (prev_t <= t <= new_t):
                     break
-                if t - t_last_event[y, x, 0] < pixel_ref:
+                if t - t_last_event[y, x, 0] < PIXEL_REF:
                     break
                 
                 # Фиксируем off-событие
