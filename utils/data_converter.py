@@ -3,6 +3,9 @@ import os
 import numpy as np
 from PIL import Image
 
+from core.input_layer import init_event_generator, generate_events
+from utils.visualization import plot_events
+
 
 
 
@@ -45,6 +48,36 @@ def dataset_dict_to_image(dataset_path, num_ex=1):
         frames = sample["frames"]
         for frame in frames:
             arr_to_image(frame)
+
+
+
+# Проверка генерации событий на датасете
+def dataset_dict_to_events(dataset_path, num_ex=1):
+    dataset_dict = load_pickle(load_path=dataset_path)
+    len_dataset = len(dataset_dict)
+    for _ in range(num_ex):
+        sample_index = np.random.randint(0, len_dataset + 1)
+        sample = dataset_dict[sample_index]
+        frames = sample["frames"]
+        num_frames = len(frames)
+        ev_generator = init_event_generator()
+        old_frame = frames[0]
+        cur_t = 0
+        dt = 33
+        cur_events = []
+        for idx in range(1, num_frames):
+            new_frame = frames[idx]
+            ev = generate_events(
+                state=ev_generator,
+                old_frame=old_frame,
+                new_frame=new_frame,
+                prev_t=cur_t,
+                new_t=cur_t+dt
+            )
+            cur_t += dt
+            cur_events.extend(ev)
+        plot_events(cur_events)
+
 
 
 

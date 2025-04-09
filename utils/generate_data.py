@@ -18,7 +18,7 @@ def generate_one_sample(
         field_size=(28,28),     # размер изображения (высота, ширина)
         square_size=7,          # сторона квадрата (объекта)
         style="linear",         # вид тректории
-        color_var=True          # если True, яркость квадрата колеблется
+        square=None             # массив нормализованных яркостей для квадрата
 ):
     height, width = field_size
     dx, dy = direction
@@ -66,15 +66,8 @@ def generate_one_sample(
         y_min = int(cy - half)
         y_max = int(cy + half) + 1
 
-        # Генерация вариации цвета: внутри квадрата задаем значения примерно равные 1.0,
-        # но с добавлением небольшого гауссовского шума (если color_var=True)
-        if color_var:
-            square = np.clip(
-                np.random.normal(loc=1.0, scale=0.15, size=(square_size, square_size)),
-                0.5, 1.0
-            )
-        else:
-            # Иначе - просто белый квадрат
+        # Если не передан массив яркостей для квадрата, генерируем просто белый квадрат
+        if square is None:
             square = np.ones((square_size, square_size), dtype=np.float32)
 
         # Рисуем квадрат
@@ -156,6 +149,7 @@ def generate_dataset(
         speed_var=[1,2],                        # возможные скорости движения объекта в пикселях за кадр
         noise_var=[0,1],                        # возможные значения зашумления
         frames_range=(5,8),                     # число кадров на один пример
+        color_var=True,                         # если True, яркость квадрата колеблется
         save_path="data/dataset_custom.pkl"     # путь для сохранения датасета
 ):
     dataset = []
@@ -164,6 +158,17 @@ def generate_dataset(
     # чтобы квадрат полностью помещался на изображении
     min_start = square_size // 2 + 2  
 
+    # Если нужно, заранее генерируем цветные квадраты
+    # Иначе квадраты будут просто белыми
+    squares = []
+    if color_var:
+        for _ in range(samples_per_style):
+            squares.append(
+                np.clip(
+                np.random.normal(loc=1.0, scale=0.15, size=(square_size, square_size)),
+                0.5, 1.0)
+            )
+
     # Для каждого базового направления
     for d in directions:
         # Генерируем различные траектории
@@ -171,6 +176,8 @@ def generate_dataset(
             # На каждую траекторию samples_per_style примеров
             count = 0
             while count < samples_per_style:
+                # Матрица яркостей квадрата
+                square = squares[count] if color_var else None
                 # Случайная стартовая позиция объекта
                 start_x = random.randint(min_start, width - min_start - 1)
                 start_y = random.randint(min_start, height - min_start - 1)
@@ -180,7 +187,6 @@ def generate_dataset(
                 noise = random.choice(noise_var)
                 # Сколько кадров будет сгенерировано для текущей траектории
                 frames_count = random.randint(frames_range[0], frames_range[1])
-
 
                 # Если при выбранных параметрах движения объект не выходит за пределы кадра
                 if check_trajectory(
@@ -202,7 +208,7 @@ def generate_dataset(
                                                 field_size=field_size,
                                                 square_size=square_size,
                                                 style=style,
-                                                color_var=True
+                                                square=square
                                                 )
                     dataset.append(sample)
                     count += 1
