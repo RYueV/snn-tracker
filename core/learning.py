@@ -1,64 +1,40 @@
 import numpy as np
 
-
-"""Глобальные константы для STDP"""
-# Инкремент веса связи
-ALPHA_PLUS = 19.8231
-# Декремент веса связи
-ALPHA_MINUS = 17.7124
-# Инкремент усиления веса связи
-BETA_PLUS = 0.06644
-# Декремент ослабления веса связи
-BETA_MINUS = 0.22925
-# Окно обучения (мс)
-T_LTP = 7.9024  
-
-
-"""Ограничения на веса связей"""
-W_MIN = 20.0
-W_MAX = 600.0
-W_RANGE = W_MAX - W_MIN
-
-
-"""Глобальная константа для латерального торможения (мс)"""
-T_INHIBIT = 2.0
-
+# Глобальные константы для скрытого слоя
+import core.hidden_config as h_conf
 
 
 
 # Обновление весов нейрона по правилу STDP
 def update_weights_stdp(
-        neuron_index,       # идекс нейрона       
+        neuron_index,       # индекс нейрона       
         t_post,             # время спайка нейрона
         weights,            # вектор весов нейрона
         last_input_times    # вектор, который хранит время активации каждого входа
 ):
-    # Обходим все входы: input_id - номер входа, t_pre - время активации входа input_id
-    for input_id, t_pre in enumerate(last_input_times):
-        delta_t = t_post - t_pre
-        w = weights[neuron_index, input_id]
+    # Строка весов связей нейрона со всеми возможными входами
+    synapse_weights = weights[neuron_index]
+    # Разница между моментами времени, когда был спайк и когда пришел входной сигнал
+    delta_t = t_post - last_input_times
+    # Окно времени, в пределах которого можно считать, что входной сигнал пришел незадолго до спайка
+    ltp_mask = np.logical_and(delta_t > 0.0, delta_t < h_conf.T_LTP)
 
-        # Если входной сигнал пришел незадолго до того, как нейрон активировался
-        if 0 < delta_t < T_LTP:
-            # Усиливаем связь
-            delta_w = ALPHA_PLUS * np.exp(-BETA_PLUS * (w - W_MIN) / W_RANGE)
-            w += delta_w
-        else:
-            # Иначе ослабляем
-            delta_w = ALPHA_MINUS * np.exp(-BETA_MINUS * (W_MAX - w) / W_RANGE)
-            w -= delta_w
+    # Вектор коэффициентов усиления связей
+    dw_ltp = h_conf.ALPHA_PLUS * np.exp(-h_conf.BETA_PLUS * (synapse_weights - h_conf.W_MIN) / h_conf.W_RANGE)
+    # Вектор коэффициентов ослабления связей
+    dw_ltd = h_conf.ALPHA_MINUS * np.exp(-h_conf.BETA_MINUS * (h_conf.W_MAX - synapse_weights) / h_conf.W_RANGE)
 
-        # Ограничиваем вес
-        weights[neuron_index, input_id] = np.clip(w, W_MIN, W_MAX)
-
-    # Возвращаем обновленный вектор весов
-    return weights[neuron_index]
+    # Если входной сигнал пришел незадолго до того, как нейрон активировался, усиливаем связь
+    synapse_weights +=  ltp_mask * dw_ltp 
+    # Иначе ослабляем
+    synapse_weights -= (~ltp_mask) * dw_ltd
+    # Ограничиваем веса в допустимом диапазоне
+    np.clip(synapse_weights, h_conf.W_MIN, h_conf.W_MAX, out=synapse_weights)
 
 
 
 # Ингибирование всех нейронов, кроме сработавшего
 def apply_inhibition(inhibited_until_array, t, spiking_index):
-    inhibited_until_array[:] = t + T_INHIBIT
+    inhibited_until_array[:] = t + h_conf.T_INHIBIT
     inhibited_until_array[spiking_index] = 0.0
-
 
