@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 
 from core.input_layer import init_event_generator, generate_events
-from utils.visualization import plot_events
+from utils.visualization import plot_events, plot_events_3d, show_trajectory
 
 
 
@@ -52,19 +52,27 @@ def dataset_dict_to_image(dataset_path, num_ex=1):
 
 
 # Проверка генерации событий на датасете
-def dataset_dict_to_events(dataset_path, num_ex=1):
+def dataset_dict_to_events(dataset_path, dt=16.7, num_ex=1):
     dataset_dict = load_pickle(load_path=dataset_path)
     len_dataset = len(dataset_dict)
     for _ in range(num_ex):
-        sample_index = np.random.randint(0, len_dataset + 1)
+        sample_index = np.random.randint(0, len_dataset)
         sample = dataset_dict[sample_index]
         frames = sample["frames"]
         num_frames = len(frames)
         ev_generator = init_event_generator()
         old_frame = frames[0]
         cur_t = 0
-        dt = 33
         cur_events = []
+
+        info = (
+            "direction: " + str(sample["direction"]) +
+            ", speed: " + str(sample["speed"]) +
+            ", style: " + str(sample["style"]) +
+            ", start_pos: " + str(sample["start_pos"])
+        )
+        all_ev = 0
+
         for idx in range(1, num_frames):
             new_frame = frames[idx]
             ev = generate_events(
@@ -76,7 +84,14 @@ def dataset_dict_to_events(dataset_path, num_ex=1):
             )
             cur_t += dt
             cur_events.extend(ev)
-        plot_events(cur_events)
+            all_ev += len(ev)
+            old_frame = new_frame
+        
+        print(f"Среднее количество событий на кадр: {all_ev/num_frames}")
+        plot_events(cur_events, info=info)
+        show_trajectory(sample)
+        plot_events_3d(cur_events, info=info)
+        
 
 
 

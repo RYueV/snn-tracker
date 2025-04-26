@@ -18,26 +18,8 @@ def simulate(
         obj_radius=2,               # половина стороны квадрата (объект)
         obj_direction=(1, 0),       # направление движения объекта (x, y)
         noise=0,                    # максимальное отклонение от основной траектории
-        pixel_ref=3.0,              # рефрактерный период события
-        threshold=0.3,              # логарифмический порог изменения яркости для генерации события
         show_hist=True              # строить ли гистограмму после периода наблюдения
 ):
-    """
-    Основная функция для симуляции задачи трекинга квадрата и генерации событий DVS-подобным способом.
-
-    Логика:
-      1) Создаётся объект трекинга, который внутри себя содержит Moving_Object и Camera.
-         При reset() инициализируются объект и камера в центре поля (так что квадрат будет в центре камеры).
-      2) Первые observe_steps кадров: объект двигается, а камера стоит на месте.
-      3) После observe_steps: камера начинает "автоматически" следовать за объектом
-         (метод simulator.step() включает в себя и шаг объекта, и шаг камеры).
-      4) Между старым и новым кадром (old_frame, new_frame) генерируются события через generate_events.
-         Время для событий интерполируется от prev_t до new_t (каждый шаг увеличиваем t на dt).
-      5) Визуализируем все кадры в анимации через matplotlib.
-         Гистограмму (и scatter-графики) событий показываем единожды в момент перехода через observe_steps.
-
-    """
-
     # Настриваем симуляцию (камера и объект)
     simulator = Tracking_Object(
         field_size=field_size,
@@ -50,7 +32,7 @@ def simulate(
     simulator.reset()
 
     # Инициализируем генератор событий (генерируем словарь состояния генератора)
-    state = init_event_generator(frame_shape=window_size, pixel_ref=pixel_ref)
+    state = init_event_generator(frame_shape=window_size)
     # Список событий
     all_events = []     
     # Текущее время в симуляции
@@ -106,8 +88,7 @@ def simulate(
             old_frame=prev_view,
             new_frame=new_view,
             prev_t=cur_time,
-            new_t=cur_time + dt,
-            threshold=threshold
+            new_t=cur_time + dt
         )
         all_events.extend(events)
 
