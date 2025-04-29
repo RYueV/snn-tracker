@@ -1,12 +1,98 @@
 import numpy as np
 import random
 import hashlib
-
 from .data_converter import save_pickle
 
 
 
-TRAJECTORY_STYLES = ["linear", "noisy", "curved", "impulse"]
+# Виды траекторий движения объекта
+TRAJECTORY_STYLES = [
+    "linear",   # линейное движение строго по направлению
+    "noisy",    # добавление случайного шума к основному направлению каждый кадр
+    "curved",   # постоянное отклонение от основного направления вбок
+    "impulse"   # добавление резкого скачка в середине пути
+]
+# Размер кадра (ширина, высота) в пикселях
+FIELD_SIZE = (28, 28)
+# Сторона квадрата в пикселях
+SQUARE_SIZE = 7
+# Половина стороны квадрата
+HALF_SIZE = SQUARE_SIZE // 2
+# Количество кадров на один пример
+FRAMES_PER_SAMPLE = 9
+# Базовые направления движения объекта (dx, dy)
+DIRECTIONS = [
+    (0, 1),         # вниз
+    (1, 0),         # вправо
+    (1, 1),         # вправо-вниз
+    (0, -1),        # вверх
+    (-1, 0),        # влево
+    (-1, -1),       # влево-вверх
+    (1, -1),        # вправо-вверх
+    (-1, 1)         # влево-вниз   
+]
+
+
+
+# Генерация шумов по осям в зависимости от типа траектории
+def generate_noise(
+        direction,      # направление движения (dx, dy)
+        max_noise,      # максимально возможное значение шума
+        style           # вид траектории
+):
+    dx, dy = direction
+    noise_dxdy = []
+
+    # Шум генерируем для каждого кадра внутри одного примера
+    for frame_i in range(FRAMES_PER_SAMPLE):
+        # Добавление случайного шума к основному направлению каждый кадр
+        if style == "noisy":
+            noise_dx = np.random.randint(-max_noise, max_noise + 1)
+            noise_dy = np.random.randint(-max_noise, max_noise + 1)
+        # Постоянное отклонение от основного направления вбок
+        elif style == "curved":
+            if dx != 0:
+                noise_dx = 0
+                noise_dy = random.choice([-max_noise, max_noise])
+            else:
+                noise_dx = random.choice([-max_noise, max_noise])
+                noise_dy = 0
+        # Добавление резкого скачка в середине пути
+        elif style == "impulse" and frame_i == FRAMES_PER_SAMPLE // 2:
+            noise_dx = random.choice([-3, 3])
+            noise_dy = random.choice([-3, 3])
+        # Если linear, то шума нет
+        else:
+            noise_dx = noise_dy = 0
+        noise_dxdy.append((noise_dx, noise_dy))
+    
+    return noise_dxdy
+
+
+
+# Проверка выхода объекта за границы
+def check_trajectory(
+        direction,      # направление движения
+        start_pos,      # стартовая координата
+        speed,          # на сколько пикселей сдвигается объект за кадр
+        noise_dxdy      # значение шума по x и по y: список кортежей (noise_dx, noise_dy)
+):
+    height, width = FIELD_SIZE
+    dx, dy = direction
+    cx, cy = start_pos
+
+    # Проверяем каждую точку траектории
+    for noise_dx, noise_dy in noise_dxdy:
+        cx += dx * speed + noise_dx
+        cy += dy * speed + noise_dy
+
+        # Если квадрат не помещается в поле, возвращаем False
+        if (cx - HALF_SIZE < 0) or (cx + HALF_SIZE >= width):
+            return False
+        if (cy - HALF_SIZE < 0) or (cy + HALF_SIZE >= height):
+            return False
+
+    return True
 
 
 
@@ -15,58 +101,39 @@ def generate_one_sample(
         direction,              # (dx, dy)
         start_pos,              # (cx, cy) начальная позиция центра
         speed,                  # скорость в пикселях/кадр
-        noise,                  # величина случайного отклонения
-        frames_count,           # число кадров в примере
-        field_size=(28, 28),    # размер поля (высота, ширина)
-        square_size=7,          # сторона квадрата
-        style="linear",         # тип траектории
+        noise_dxdy,             # величина случайного отклонения
+        style,
         square=None             # матрица яркостей квадрата
 ):
-    height, width = field_size
+    height, width = FIELD_SIZE
     dx, dy = direction
     cx, cy = start_pos
-    half = square_size // 2
     frames = []
 
-    for frame_i in range(frames_count):
-        frame = np.zeros(field_size, dtype=np.float32)
+    # Создаем заданное количество кадров
+    for frame_i in range(FRAMES_PER_SAMPLE):
+        # Создаем кадр (черное поле)
+        frame = np.zeros(FIELD_SIZE, dtype=np.float32)
+        # Шум на данном кадре
+        noise_dx, noise_dy = noise_dxdy[frame_i]
 
-        # Выбор случайного смещения в зависимости от стиля
-        if style == "noisy":
-            noise_dx = np.random.randint(-noise, noise + 1)
-            noise_dy = np.random.randint(-noise, noise + 1)
-        elif style == "curved":
-            if dx != 0:
-                noise_dx = 0
-                noise_dy = random.choice([-noise, noise])
-            else:
-                noise_dx = random.choice([-noise, noise])
-                noise_dy = 0
-        elif style == "impulse" and frame_i == frames_count // 2:
-            noise_dx = random.choice([-3, 3])
-            noise_dy = random.choice([-3, 3])
-        else:
-            noise_dx = 0
-            noise_dy = 0
-
-        # Обновляем координаты центра
+        # Обновляем координаты центра квадрата
         cx += dx * speed + noise_dx
         cy += dy * speed + noise_dy
 
         # Ограничиваем координаты, чтобы квадрат помещался в поле
-        cx = np.clip(cx, half, width - half - 1)
-        cy = np.clip(cy, half, height - half - 1)
+        cx = np.clip(cx, HALF_SIZE, width - HALF_SIZE - 1)
+        cy = np.clip(cy, HALF_SIZE, height - HALF_SIZE - 1)
 
-        # Если квадрат не передан, создаем белый квадрат
-        if square is None:
-            square = np.ones((square_size, square_size), dtype=np.float32)
+        # Координаты углов квадрата
+        x_min = int(cx - HALF_SIZE)
+        x_max = int(cx + HALF_SIZE) + 1
+        y_min = int(cy - HALF_SIZE)
+        y_max = int(cy + HALF_SIZE) + 1
 
-        x_min = int(cx - half)
-        x_max = int(cx + half) + 1
-        y_min = int(cy - half)
-        y_max = int(cy + half) + 1
-
+        # Рисуем квадрат
         frame[y_min:y_max, x_min:x_max] = square
+        # Сохраняем кадр
         frames.append(frame)
 
     return {
@@ -74,54 +141,10 @@ def generate_one_sample(
         "direction": direction,
         "start_pos": start_pos,
         "speed": speed,
-        "noise": noise,
-        "style": style,
-        "square_size": square_size
+        "noise": noise_dxdy,
+        "style": style
     }
 
-
-
-# Проверка выхода объекта за границы
-def check_trajectory(
-        direction, start_pos, speed, noise,
-        frames_count, field_size, square_size,
-        style
-):
-    height, width = field_size
-    dx, dy = direction
-    cx, cy = start_pos
-    half = square_size // 2
-
-    for frame_i in range(frames_count):
-        if style == "noisy":
-            noise_dx = np.random.randint(-noise, noise + 1)
-            noise_dy = np.random.randint(-noise, noise + 1)
-        elif style == "curved":
-            if dx != 0:
-                noise_dx = 0
-                noise_dy = random.choice([-noise, noise])
-            else:
-                noise_dx = random.choice([-noise, noise])
-                noise_dy = 0
-        elif style == "impulse" and frame_i == frames_count // 2:
-            noise_dx = random.choice([-3, 3])
-            noise_dy = random.choice([-3, 3])
-        else:
-            noise_dx = 0
-            noise_dy = 0
-
-        cx_tmp = cx + dx * speed + noise_dx
-        cy_tmp = cy + dy * speed + noise_dy
-
-        # Если не помещается в поле, возвращаем False
-        if (cx_tmp - half < 0) or (cx_tmp + half >= width):
-            return False
-        if (cy_tmp - half < 0) or (cy_tmp + half >= height):
-            return False
-
-        cx, cy = cx_tmp, cy_tmp
-
-    return True
 
 
 
@@ -134,96 +157,73 @@ def _hash_frames(frames):
 
 
 
-
 # Генерация полного датасета
 def generate_dataset(
-        directions=[(1,0), (0,1), (-1,0), (0,-1), (1,1), (1,-1), (-1,1), (-1,-1)],
-        styles=TRAJECTORY_STYLES,
-        samples_per_style=40,
-        field_size=(28,28),
-        square_size=7,
-        speed_var=[1,2],
-        noise_var=[0,1],
-        color_var=True,
-        frames_count=7,
-        max_tries=10000,
-        save_path="data/dataset_custom.pkl"
+        samples_per_style=40,   # количество примеров на один вид траектории
+        speed_var=[1,2],        # возможные значения количества пикселей, на которое смещается квадрат за кадр
+        noise_var=[0,1],        # возможные значения максимальной амплитуды шума
+        color_var=True,         # если True, квадрат разноцветный, иначе белый
+        max_tries=10000,        # количество попыток генерации примера
+        save_path="data/dataset.pkl"    # путь для сохранения датасета
 ):
     dataset = []
-    height, width = field_size
-    half = square_size // 2
-    min_start = half + 2
+    height, width = FIELD_SIZE
+    min_start = HALF_SIZE
+    max_start_x = width - HALF_SIZE - 1
+    max_start_y = height - HALF_SIZE - 1
+    seen = set()
 
-    squares = []
-    if color_var:
-        total_squares_needed = samples_per_style * len(styles)
-        for _ in range(total_squares_needed):
-            sq = np.clip(
-                np.random.normal(loc=1.0, scale=0.15, size=(square_size, square_size)),
+    for _ in range(samples_per_style):
+        # Генерируем квадрат
+        if color_var:
+            square = np.clip(
+                np.random.normal(loc=1.0, scale=0.15, size=(SQUARE_SIZE, SQUARE_SIZE)),
                 0.5, 1.0
             )
-            squares.append(sq)
-    else:
-        squares = [None] * (samples_per_style * len(styles))
+        else:
+            square = np.ones((SQUARE_SIZE, SQUARE_SIZE))
 
-    seen_trajectories = set()
-
-    total_needed = len(directions) * len(styles) * samples_per_style
-    added_count = 0
-    tries_count = 0
-
-    while added_count < total_needed and tries_count < max_tries:
-        tries_count += 1
-
-        d = random.choice(directions)
-        style = random.choice(styles)
+        # Выбираем шум и скорость
+        max_noise = random.choice(noise_var)
         speed = random.choice(speed_var)
-        noise = random.choice(noise_var)
 
-        chosen_square = random.choice(squares)
+        # Перебираем все виды траекторий
+        for style in TRAJECTORY_STYLES:
+            tries = 0
+            # Будем пробовать разные стартовые позиции, пока не найдем минимум 3 допустимых направления
+            while tries < max_tries:
+                tries += 1
+                # Генерируем начальную позицию центра квадрата
+                start_pos = (
+                    random.randint(min_start, max_start_x),
+                    random.randint(min_start, max_start_y)
+                )
 
-        start_x = random.randint(min_start, width - min_start - 1)
-        start_y = random.randint(min_start, height - min_start - 1)
+                # Список успешно сгенерированных направлений
+                valid_directions = []
 
-        is_valid = check_trajectory(
-            direction=d,
-            start_pos=(start_x, start_y),
-            speed=speed,
-            noise=noise,
-            frames_count=frames_count,
-            field_size=field_size,
-            square_size=square_size,
-            style=style
-        )
+                # Перебираем все базовые направления
+                for direction in DIRECTIONS:
+                    # Генерируем шум
+                    noise_dxdy = generate_noise(direction, max_noise, style)
+                    # Проверяем, не выйдет ли квадрат за границы поля
+                    if not check_trajectory(direction, start_pos, speed, noise_dxdy):
+                        continue
+                    # Генерируем пример
+                    sample = generate_one_sample(direction, start_pos, speed, noise_dxdy, style, square)
+                    # Хэшируем
+                    sample_h = _hash_frames(sample["frames"])
+                    # Пропускаем дубликаты
+                    if sample_h in seen:
+                        continue
+                    # Добавляем в датасет
+                    seen.add(sample_h)
+                    dataset.append(sample)
+                    valid_directions.append(direction)
 
-        if not is_valid:
-            continue
-
-        sample = generate_one_sample(
-            direction=d,
-            start_pos=(start_x, start_y),
-            speed=speed,
-            noise=noise,
-            frames_count=frames_count,
-            field_size=field_size,
-            square_size=square_size,
-            style=style,
-            square=chosen_square
-        )
-
-        frames = sample["frames"]
-
-        diff_sum = np.sum(np.abs(frames[-1] - frames[0]))
-        if diff_sum < 1.0:
-            continue
-
-        traj_hash = _hash_frames(frames)
-        if traj_hash in seen_trajectories:
-            continue
-
-        seen_trajectories.add(traj_hash)
-        dataset.append(sample)
-        added_count += 1
+                # Если набрали хотя бы 3 допустимых направления, выходим из цикла выбора позиции
+                if len(valid_directions) >= 3:
+                    break
 
     save_pickle(save_path=save_path, data=dataset)
     return len(dataset)
