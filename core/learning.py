@@ -27,3 +27,33 @@ def update_weights_stdp(
     np.clip(synapse_weights, cfg.W_MIN, cfg.W_MAX, out=synapse_weights)
 
 
+
+
+# p-STDP для выходного слоя
+def apply_reward_pstdp(
+        weights,                # матрица весов выходного слоя
+        eligibility,            # буфер обучаемости
+        reward                  # награда (+1, -1)
+):
+    """
+    
+    В буфере eligibility содержатся значения весов связей, накопленные при обработке
+    постсинтаптических и пресинаптических спайков;
+    Эти значения обратно пропорциональны разнице времени между спайками нейронов
+    скрытого и выходного слоев: если разница мала, то значения весов (в буфере) больше и наоборот;
+    Если награда положительная, то есть связь, зафиксированная в eligibility, подтверждается,
+    то веса связей усиливаются уже в настоящей матрице весов, если отрицательная - уменьшаются.
+    
+    """
+    weights += cfg.OUT_ETA * reward * eligibility
+    np.clip(weights, cfg.W_MIN, cfg.W_MAX, out=weights)
+
+
+
+
+# Экспоненциальное затухание устаревших значений в eligibility
+def decay_eligibility(
+        eligibility,            # буфер обучаемости
+        dt                      # шаг времени (мс)
+):
+    eligibility *= np.exp(-dt / cfg.OUT_T_ELIG)
