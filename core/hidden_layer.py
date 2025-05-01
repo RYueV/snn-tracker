@@ -25,7 +25,7 @@ def init_hidden_layer():
 
     return {
         # Текущее значение потенциала для каждого нейрона сети
-        "membrane_potentials": np.zeros(cfg.COUNT_NEURONS, np.float32),
+        "u": np.zeros(cfg.COUNT_NEURONS, np.float32),
         # Время последней активации каждого входа
         "last_input_times": np.zeros(input_size, np.float32),
         # Время последнего обновления потенциала каждого нейрона сети
@@ -49,7 +49,7 @@ def init_hidden_layer():
 
 # Сброс настроек скрытого слоя
 def reset_hidden_layer(state):
-    state["membrane_potentials"].fill(0.0)
+    state["u"].fill(0.0)
     state["last_update"].fill(0.0)
     state["last_spike"].fill(-np.inf)
     state["inhibited_until"].fill(0.0)
@@ -68,7 +68,7 @@ def _event_processing(
         train=True,     # если True, веса меняются; иначе зафиксированы
 ):
     # Вектор потенциалов нейронов
-    u = state["membrane_potentials"]
+    u = state["u"]
     # Экспоненциальное затухание потенциалов
     dt = t_ms - state["last_update"]
     u *= np.exp(-dt / cfg.TAU_LEAK)
