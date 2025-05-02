@@ -30,9 +30,7 @@ def init_event_generator(
         # Для каждого пикселя хранит яркость, при которой было последнее off-событие
         "last_off": np.ones(frame_shape, dtype=np.float32) * 1.0,
         # Для каждого пикселя и каждой полярности хранит время последнего события
-        "t_last_event": np.full((*frame_shape, 2), -np.inf, dtype=np.float32),
-        # Случайный сдвиг времени для каждого пикселя
-        "rand_time_offset": np.random.uniform(0, 5, size=frame_shape).astype(np.float32)
+        "t_last_event": np.full((*frame_shape, 2), -np.inf, dtype=np.float32)
     }
 
 
@@ -88,7 +86,7 @@ def generate_events(
                 # Вычисляем момент времени пересечения порога с помощью линейной интерполяции
                 t_cross = prev_t + (target - old_val) / (dI_dt + EPS)
                 # Добавляем случайное смещение времени
-                t_cross += state["rand_time_offset"][y, x]
+                t_cross += np.random.uniform(0, 5)
                 # prev_t <= t_cross <= new_t
                 t_cross = np.clip(t_cross, prev_t, new_t)
                 # Событие фиксируется только если рефрактерный период вышел
@@ -109,7 +107,7 @@ def generate_events(
                 # Вычисляем момент времени пересечения порога с помощью линейной интерполяции
                 t_cross = prev_t + (target - old_val) / (dI_dt + EPS)
                 # Добавляем случайное смещение времени
-                t_cross += state["rand_time_offset"][y, x]
+                t_cross += np.random.uniform(0, 5)
                 # prev_t <= t_cross <= new_t
                 t_cross = np.clip(t_cross, prev_t, new_t)
                 # Событие фиксируется только если рефрактерный период вышел
