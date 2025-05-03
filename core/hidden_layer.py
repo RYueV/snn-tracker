@@ -37,7 +37,9 @@ def init_hidden_layer():
         # Матрица весов
         "weights": weights,
         # Массив спайков: (момент времени, номер нейрона)
-        "spikes": []
+        "spikes": [],
+        # Вектор индивидуальных порогов нейронов
+        "thresh": np.full(cfg.COUNT_NEURONS, cfg.I_THRES, np.float32)
     }
 
 
@@ -83,7 +85,7 @@ def hidden_layer_step(
     state["last_input_times"][input_id] = t
 
     # Если были спайки у одного или нескольких нейронов
-    gave_spike = np.where(state["u"] > cfg.I_THRES)[0]
+    gave_spike = np.where(state["u"] > state["thresh"])[0]
     if gave_spike.size > 0:
         # Создаем копию потенциалов, чтобы не изменить значения
         u_copy = state["u"].copy()
