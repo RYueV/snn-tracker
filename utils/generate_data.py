@@ -5,6 +5,7 @@ from .data_converter import save_pickle
 
 
 
+
 # Виды траекторий движения объекта
 TRAJECTORY_STYLES = [
     "linear",   # линейное движение строго по направлению
@@ -13,7 +14,7 @@ TRAJECTORY_STYLES = [
     "impulse"   # добавление резкого скачка в середине пути
 ]
 # Размер кадра (ширина, высота) в пикселях
-FIELD_SIZE = (28, 28)
+FRAME_SIZE = (28, 28)
 # Сторона квадрата в пикселях
 SQUARE_SIZE = 7
 # Половина стороны квадрата
@@ -31,6 +32,8 @@ DIRECTIONS = [
     (1, -1),        # вправо-вверх
     (-1, 1)         # влево-вниз   
 ]
+# Количество примеров на одно направление
+SAMPLES_PER_DIR = 100
 
 
 
@@ -40,7 +43,7 @@ def generate_noise(
         max_noise,      # максимально возможное значение шума
         style           # вид траектории
 ):
-    dx, dy = direction
+    dx, _ = direction
     noise_dxdy = []
 
     # Шум генерируем для каждого кадра внутри одного примера
@@ -77,7 +80,7 @@ def check_trajectory(
         speed,          # на сколько пикселей сдвигается объект за кадр
         noise_dxdy      # значение шума по x и по y: список кортежей (noise_dx, noise_dy)
 ):
-    height, width = FIELD_SIZE
+    height, width = FRAME_SIZE
     dx, dy = direction
     cx, cy = start_pos
 
@@ -105,7 +108,7 @@ def generate_one_sample(
         style,
         square=None             # матрица яркостей квадрата
 ):
-    height, width = FIELD_SIZE
+    height, width = FRAME_SIZE
     dx, dy = direction
     cx, cy = start_pos
     frames = []
@@ -113,7 +116,7 @@ def generate_one_sample(
     # Создаем заданное количество кадров
     for frame_i in range(FRAMES_PER_SAMPLE):
         # Создаем кадр (черное поле)
-        frame = np.zeros(FIELD_SIZE, dtype=np.float32)
+        frame = np.zeros(FRAME_SIZE, dtype=np.float32)
         # Шум на данном кадре
         noise_dx, noise_dy = noise_dxdy[frame_i]
 
@@ -159,7 +162,6 @@ def _hash_frames(frames):
 
 # Генерация полного датасета
 def generate_dataset(
-        samples_per_style=40,   # количество примеров на один вид траектории
         speed_var=[1,2],        # возможные значения количества пикселей, на которое смещается квадрат за кадр
         noise_var=[0,1],        # возможные значения максимальной амплитуды шума
         color_var=True,         # если True, квадрат разноцветный, иначе белый
@@ -167,13 +169,25 @@ def generate_dataset(
         save_path="data/dataset.pkl"    # путь для сохранения датасета
 ):
     dataset = []
-    height, width = FIELD_SIZE
+    # Ограничения на начальные позиции объекта
     min_start = HALF_SIZE
-    max_start_x = width - HALF_SIZE - 1
-    max_start_y = height - HALF_SIZE - 1
+    max_start_x = FRAME_SIZE[1] - HALF_SIZE - 1
+    max_start_y = FRAME_SIZE[0] - HALF_SIZE - 1
+    # Множество тех примеров, которые уже видели, чтобы не повторяться
     seen = set()
+    # Количество сгенерированных примеров на каждый стиль для каждого направления
+    style_counter = {d: {s: 0 for s in TRAJECTORY_STYLES} for d in DIRECTIONS}
+    # Минимальное количество примеров на пару (стиль, направление)
+    min_samp_per_style = SAMPLES_PER_DIR // len(TRAJECTORY_STYLES)
+    # Вспомогательный словарь, который определяет, нужны ли дополнительные примеры на пару,
+    # если в результате первоначального распределения остаются "лишние" примеры
+    styles_with_add_samp = {
+        s: (i < SAMPLES_PER_DIR % len(TRAJECTORY_STYLES))
+        for i,s in enumerate(TRAJECTORY_STYLES)
+    }
 
-    for _ in range(samples_per_style):
+    # Пока не набрали нужное количество примеров хотя бы для одного из направлений
+    while any(sum(style_counter[d].values()) < SAMPLES_PER_DIR for d in DIRECTIONS):
         # Генерируем квадрат
         if color_var:
             square = np.clip(
@@ -182,7 +196,6 @@ def generate_dataset(
             )
         else:
             square = np.ones((SQUARE_SIZE, SQUARE_SIZE))
-
         # Выбираем шум и скорость
         max_noise = random.choice(noise_var)
         speed = random.choice(speed_var)
@@ -200,15 +213,24 @@ def generate_dataset(
                 )
 
                 # Список успешно сгенерированных направлений
-                valid_directions = []
+                valid_directions = 0
 
                 # Перебираем все базовые направления
                 for direction in DIRECTIONS:
+                    # Проверяем, не набрали ли нужное количество примеров на (стиль, направление)
+                    target = min_samp_per_style + int(styles_with_add_samp[style])
+                    if style_counter[direction][style] >= target:
+                        continue
+                    # Проверяем, не набрали ли необходимое количество примеров на направление
+                    if sum(style_counter[direction].values()) >= SAMPLES_PER_DIR:
+                        continue
+
                     # Генерируем шум
                     noise_dxdy = generate_noise(direction, max_noise, style)
                     # Проверяем, не выйдет ли квадрат за границы поля
                     if not check_trajectory(direction, start_pos, speed, noise_dxdy):
                         continue
+
                     # Генерируем пример
                     sample = generate_one_sample(direction, start_pos, speed, noise_dxdy, style, square)
                     # Хэшируем
@@ -216,14 +238,24 @@ def generate_dataset(
                     # Пропускаем дубликаты
                     if sample_h in seen:
                         continue
+
                     # Добавляем в датасет
                     seen.add(sample_h)
                     dataset.append(sample)
-                    valid_directions.append(direction)
+                    style_counter[direction][style] += 1
+                    valid_directions += 1
 
-                # Если набрали хотя бы 3 допустимых направления, выходим из цикла выбора позиции
-                if len(valid_directions) >= 3:
+                    # Если примеров достаточно, можно завершать
+                    if all(sum(style_counter[d].values()) >= SAMPLES_PER_DIR for d in DIRECTIONS):
+                        break
+
+                # Нужно минимум 3 направления6
+                if valid_directions > 2:
                     break
 
+
     save_pickle(save_path=save_path, data=dataset)
-    return len(dataset)
+
+    print(f"Сгенерировано примеров: {len(dataset)}")
+    print("Распределение примеров по направлениям и видам траекторий\n")
+    print(style_counter)
