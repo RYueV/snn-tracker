@@ -39,7 +39,9 @@ def init_hidden_layer():
         # Массив спайков: (момент времени, номер нейрона)
         "spikes": [],
         # Вектор индивидуальных порогов нейронов
-        "thresh": np.full(cfg.COUNT_NEURONS, cfg.I_THRES, np.float32)
+        "thresh": np.full(cfg.COUNT_NEURONS, cfg.I_THRES, np.float32),
+        # (для обучения: сколько примеров подряд нейрон молчит)
+        "inactivity": np.zeros(cfg.COUNT_NEURONS, np.int32)
     }
 
 
@@ -60,7 +62,8 @@ def reset_hidden_layer(state):
 def hidden_layer_step(
         state,          # словарь параметров сети
         event,          # событие из input_layer
-        train=True      # если True, веса меняются; иначе зафиксированы
+        train=True,     # если True, веса меняются; иначе зафиксированы
+        norm_factor=1
 ):
     # Извлекаем время события, координаты пикселя и полярность
     t, x, y, p = event
@@ -79,7 +82,7 @@ def hidden_layer_step(
         (t >= state["inhibited_until"]) &
         (t >= state["last_spike"] + cfg.T_REF)
     )
-    state["u"][mask_active] += state["weights"][mask_active, input_id]
+    state["u"][mask_active] += norm_factor * state["weights"][mask_active, input_id]
     
     # Фиксируем время последней активации входа input_id
     state["last_input_times"][input_id] = t
